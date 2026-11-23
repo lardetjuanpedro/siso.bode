@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador 3D SISO - Fourier & LTI</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js">
+    </script>
+    <style>
+        :root {
+            --bg: #f0f2f5;
+            --panel-bg: #ffffff;
+            --border: #dde1e6;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            --text: #1a1a2e;
+            --accent: #3b6df0;
+            --accent2: #e8654a;
+            --radius: 10px;
+            --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            --transition: 0.2s ease;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 8px;
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 280px 1fr 280px;
+            grid-template-rows: auto minmax(0, 1fr) auto;
+            grid-template-areas:
+                'header header header'
+                'left  3d     right'
+                'bottom bottom bottom';
+            gap: 10px;
+            width: 100%;
+            max-width: 1500px;
+            height: 95vh;
+            min-height: 900px;
+        }
+
+        .header-area {
+            grid-area: header;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 6px 12px;
+            background: var(--panel-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            z-index: 5;
+        }
+
+        .header-area h1 {
+            font-size: 1.2rem;
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            white-space: nowrap;
+        }
+
+        .header-area .badge {
+            font-size: 0.7rem;
+            background: var(--accent);
+            color: #fff;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            padding: 12px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 0;
+        }
+
+        .panel-left {
+            grid-area: left;
+            z-index: 2;
+        }
+
+        .panel-right {
+            grid-area: right;
+            z-index: 2;
+        }
+
+        .panel-3d {
+            grid-area: 3d;
+            position: relative;
+            min-height: 350px;
+            background: #1a1a2e;
+            border-radius: var(--radius);
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            z-index: 1;
+        }
+
+        .panel-bottom {
+            grid-area: bottom;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            min-height: 280px;
+            z-index: 2;
+        }
+
+        .chart-box {
+            background: var(--panel-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border);
+            padding: 8px;
+            min-height: 240px;
+            /* Agregamos Flexbox para controlar la altura internamente */
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chart-box h3 {
+            font-size: 0.8rem;
+            text-align: center;
+            margin-bottom: 6px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            color: #555;
+            /* Evita que el título se comprima al redimensionar */
+            flex-shrink: 0;
+        }
+
+        /* Nueva clase para contener el canvas de forma estricta */
+        .canvas-wrapper {
+            position: relative;
+            width: 100%;
+            flex-grow: 1;
+            /* Ocupa el espacio restante del chart-box */
+            /* min-height: 0 es crucial para que Chart.js no expanda el grid infinitamente */
+            min-height: 0;
+        }
+
+        .chart-box canvas {
+            /* Mantenemos el 100% pero ahora confinado dentro del canvas-wrapper */
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+            color: #444;
+        }
+
+        input[type=range] {
+            width: 100%;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        select {
+            width: 100%;
+            padding: 6px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 0.75rem;
+            font-family: var(--font);
+            background: #f9fafb;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        select:focus,
+        input:focus,
+        button:focus {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
+        }
+
+        button {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 0.73rem;
+            font-weight: 600;
+            cursor: pointer;
+            background: #f9fafb;
+            transition: var(--transition);
+            font-family: var(--font);
+            letter-spacing: 0.2px;
+            white-space: nowrap;
+        }
+
+        button:hover {
+            background: #eef2ff;
+            border-color: var(--accent);
+        }
+
+        button.accent {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        button.accent:hover {
+            background: #2c5de0;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+        }
+
+        .btn-group button {
+            flex: 1;
+            min-width: 38px;
+            font-size: 0.68rem;
+            padding: 5px 8px;
+        }
+
+        .view-btns {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            gap: 5px;
+            background: rgba(0, 0, 0, 0.65);
+            padding: 6px 10px;
+            border-radius: 20px;
+            backdrop-filter: blur(6px);
+        }
+
+        .view-btns button {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            font-size: 0.65rem;
+            padding: 5px 9px;
+            border-radius: 14px;
+            letter-spacing: 0.3px;
+            transition: var(--transition);
+        }
+
+        .view-btns button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .pz-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.7rem;
+            flex-wrap: wrap;
+            padding: 4px 6px;
+            background: #f9fafb;
+            border-radius: 6px;
+            border: 1px solid #eee;
+        }
+
+        .pz-item select {
+            width: auto;
+            font-size: 0.68rem;
+            padding: 3px 5px;
+        }
+
+        .pz-item input {
+            width: 55px;
+            font-size: 0.68rem;
+            padding: 3px 4px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+        }
+
+        .pz-item button {
+            padding: 2px 7px;
+            font-size: 0.65rem;
+            border-radius: 4px;
+        }
+
+        .section-title {
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            margin-top: 2px;
+            color: #333;
+            border-bottom: 2px solid #eef;
+            padding-bottom: 3px;
+        }
+
+        .harmonic-row {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 0.65rem;
+            padding: 2px 4px;
+            border-radius: 4px;
+            background: #fafbfc;
+            flex-wrap: wrap;
+        }
+
+        .harmonic-row input[type=checkbox] {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+            accent-color: var(--accent);
+        }
+
+        .harmonic-row input[type=range] {
+            width: 50px;
+            height: 4px;
+        }
+
+        .harmonic-row span {
+            min-width: 38px;
+            text-align: right;
+            font-weight: 600;
+            font-size: 0.62rem;
+        }
+
+        textarea {
+            width: 100%;
+            font-family: 'Courier New', monospace;
+            font-size: 0.7rem;
+            padding: 5px;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+            resize: vertical;
+            min-height: 28px;
+            background: #fdfdfd;
+        }
+
+        @media (max-width: 900px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto auto auto;
+                grid-template-areas:
+                    'header'
+                    '3d'
+                    'left'
+                    'right'
+                    'bottom';
+                height: auto;
+                min-height: auto;
+                gap: 8px;
+            }
+
+            .panel-3d {
+                min-height: 320px;
+                height: 45vh;
+            }
+
+            .panel-bottom {
+                grid-template-columns: 1fr;
+                min-height: auto;
+            }
+
+            .panel-left,
+            .panel-right {
+                max-height: none;
+                overflow-y: visible;
+            }
+        }
+
+        @media (max-width: 500px) {
+            .view-btns button {
+                font-size: 0.58rem;
+                padding: 4px 6px;
+            }
+
+            .header-area h1 {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container" id="mainContainer">
+        <!-- Header -->
+        <div class="header-area">
+            <h1>🎛️ Simulador 3D SISO</h1>
+            <span class="badge">Fourier + LTI</span>
+            <span style="font-size:0.7rem;color:#888;">Descomposición de Fourier & Respuesta de Sistema Lineal</span>
+        </div>
+
+        <!-- Panel Izquierdo: Función de Transferencia -->
+        <div class="panel panel-left" id="panelLeft">
+            <div class="section-title">📐 Función de Transferencia</div>
+            <label>Ganancia K <span id="gainVal">1.00</span></label>
+            <input type="range" id="gainSlider" min="0.1" max="5" step="0.01" value="1">
+            <label>Modo LTI
+                <select id="ltiMode">
+                    <option value="continuous" selected>Continuo (Laplace)</option>
+                    <option value="discrete">Discreto (Tustin Z)</option>
+                </select>
+            </label>
+            <label id="fsLabel" style="display:none;">Frec. muestreo (Hz)
+                <input type="range" id="fsSlider" min="1" max="500" step="1" value="100">
+                <span id="fsVal">100</span>
+            </label>
+            <div class="section-title">🎯 Presets</div>
+            <div class="btn-group">
+                <button data-preset="lp1">LP 1º</button>
+                <button data-preset="lp2" class="accent">LP 2º</button>
+                <button data-preset="hp1">HP 1º</button>
+                <button data-preset="notch">Notch</button>
+            </div>
+            <div class="section-title">🔩 Polos y Ceros</div>
+            <div id="pzContainer" style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
+                <!-- Dinámico -->
+            </div>
+            <button id="addPoleBtn" style="font-size:0.68rem;">+ Añadir Polo</button>
+            <button id="addZeroBtn" style="font-size:0.68rem;">+ Añadir Cero</button>
+            <div class="section-title">📝 Ecuación Polinómica</div>
+            <label>Numerador</label>
+            <textarea id="numPoly" rows="1" placeholder="ej. 1">1</textarea>
+            <label>Denominador</label>
+            <textarea id="denPoly" rows="1"
+                placeholder="ej. s^2 + 2*s + 1">s^2 + 2*0.7*2*3.1416*s + (2*3.1416)^2</textarea>
+            <button id="applyPolyBtn" class="accent" style="width:100%;">✅ Aplicar Ecuación</button>
+        </div>
+
+        <!-- Panel Central: Vista 3D -->
+        <div class="panel-3d" id="container3D">
+            <div class="view-btns" id="viewBtns">
+                <button data-view="iso">🔷 Iso</button>
+                <button data-view="front">🔲 Frente</button>
+                <button data-view="side">📊 Lateral</button>
+                <button data-view="top">⬆️ Superior</button>
+            </div>
+        </div>
+
+        <!-- Panel Derecho: Síntesis de Fourier -->
+        <div class="panel panel-right" id="panelRight">
+            <div class="section-title">🎵 Síntesis de Fourier</div>
+            <label>Frec. fundamental f₀ (Hz) <span id="f0Val">1.00</span></label>
+            <input type="range" id="f0Slider" min="0.1" max="20" step="0.1" value="1">
+            <label>Forma de onda
+                <select id="waveShape">
+                    <option value="square" selected>Cuadrada</option>
+                    <option value="triangle">Triangular</option>
+                    <option value="sawtooth">Diente de Sierra</option>
+                    <option value="sine">Seno Puro</option>
+                </select>
+            </label>
+            <div class="section-title">📋 Armónicos (hasta 25)</div>
+            <div id="harmonicsContainer"
+                style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
+                <!-- Dinámico -->
+            </div>
+        </div>
+
+        <!-- Panel Inferior: Gráficos -->
+        <div class="panel-bottom" id="panelBottom">
+            <div class="chart-box">
+                <h3>⏱️ Señal Temporal</h3>
+                <div class="canvas-wrapper">
+                    <canvas id="chartTime"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>📈 Diagrama de Bode</h3>
+                <div class="canvas-wrapper">
+                    <canvas id="chartBode"></canvas>
+                </div>
+            </div>
+            <div class="chart-box">
+                <h3>📍 Polos y Ceros</h3>
+                <div class="canvas-wrapper">
+                    <canvas id="chartPZ"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.157.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.157.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // ==================== COMPLEX NUMBER CLASS ====================
+        class Complex {
+            constructor(re = 0, im = 0) {
+                this.re = re;
+                this.im = im;
+            }
+            add(o) { return new Complex(this.re + o.re, this.im + o.im); }
+            sub(o) { return new Complex(this.re - o.re, this.im - o.im); }
+            mul(o) { return new Complex(this.re * o.re - this.im * o.im, this.re * o.im + this.im * o.re); }
+            div(o) {
+                const d = o.re * o.re + o.im * o.im;
+                return new Complex((this.re * o.re + this.im * o.im) / d, (this.im * o.re - this.re * o.im) / d);
+            }
+            abs() { return Math.sqrt(this.re * this.re + this.im * this.im); }
+            arg() { return Math.atan2(this.im, this.re); }
+            conj() { return new Complex(this.re, -this.im); }
+            static fromPolar(r, theta) { return new Complex(r * Math.cos(theta), r * Math.sin(theta)); }
+        }
+
+        // ==================== DURAND-KERNER ====================
+        function evalPoly(coeffs, z) {
+            let result = new Complex(coeffs[0], 0);
+            for (let i = 1; i < coeffs.length; i++) {
+                result = result.mul(z).add(new Complex(coeffs[i], 0));
+            }
+            return result;
+        }
+
+        function durandKerner(coeffs, maxIter = 150, tol = 1e-12) {
+            const n = coeffs.length - 1;
+            if (n <= 0) return [];
+            if (n === 1) return [new Complex(-coeffs[1] / coeffs[0], 0)];
+            const a = coeffs.map(c => c / coeffs[0]);
+            const roots = [];
+            const radius = Math.pow(Math.abs(a[a.length - 1]), 1 / n) || 2;
+            for (let i = 0; i < n; i++) {
+                const angle = (2 * Math.PI * i) / n + Math.PI / (2 * n) + 0.1;
+                roots.push(Complex.fromPolar(radius, angle));
+            }
+            for (let iter = 0; iter < maxIter; iter++) {
+                let maxDiff = 0;
+                for (let i = 0; i < n; i++) {
+                    const num = evalPoly(a, roots[i]);
+                    let den = new Complex(1, 0);
+                    for (let j = 0; j < n; j++) {
+                        if (i !== j) den = den.mul(roots[i].sub(roots[j]));
+                    }
+                    if (den.abs() < 1e-15) continue;
+                    const delta = num.div(den);
+                    roots[i] = roots[i].sub(delta);
+                    maxDiff = Math.max(maxDiff, delta.abs());
+                }
+                if (maxDiff < tol) break;
+            }
+            return roots;
+        }
+
+        // ==================== POLYNOMIAL PARSER ====================
+        function parsePolynomial(str) {
+            if (!str || str.trim() === '') return [];
+            let s = str.replace(/\s+/g, '');
+            if (s === '0') return [0];
+            const terms = [];
+            let current = '';
+            for (let i = 0; i < s.length; i++) {
+                if ((s[i] === '+' || s[i] === '-') && i > 0 && current.length > 0) {
+                    terms.push(current);
+                    current = s[i];
+                } else {
+                    current += s[i];
+                }
+            }
+            if (current.length > 0) terms.push(current);
+            const parsed = [];
+            for (const term of terms) {
+                let t = term;
+                let sign = 1;
+                if (t.startsWith('+')) {
+                    sign = 1;
+                    t = t.slice(1);
+                } else if (t.startsWith('-')) {
+                    sign = -1;
+                    t = t.slice(1);
+                }
+                if (t === '') continue;
+                let coeff = sign;
+                let exp = 0;
+                const sIndex = t.indexOf('s');
+                if (sIndex === -1) {
+                    coeff *= parseFloat(t);
+                    exp = 0;
+                } else {
+                    const before = t.substring(0, sIndex);
+                    if (before === '' || before === '+') coeff *= 1;
+                    else if (before === '-') coeff *= -1;
+                    else coeff *= parseFloat(before);
+                    const after = t.substring(sIndex + 1);
+                    if (after.startsWith('^')) {
+                        exp = parseInt(after.substring(1));
+                    } else if (after === '') {
+                        exp = 1;
+                    } else if (after.startsWith('*')) {
+                        const rest = after.substring(1);
+                        if (rest.startsWith('^')) exp = parseInt(rest.substring(1));
+                        else if (rest === '') exp = 1;
+                        else exp = parseInt(rest);
+                    } else {
+                        exp = 1;
+                    }
+                }
+                parsed.push({ coeff, exp });
+            }
+            let maxExp = 0;
+            for (const p of parsed) maxExp = Math.max(maxExp, p.exp);
+            const coeffs = new Array(maxExp + 1).fill(0);
+            for (const p of parsed) {
+                coeffs[maxExp - p.exp] += p.coeff;
+            }
+            while (coeffs.length > 1 && Math.abs(coeffs[0]) < 1e-14) coeffs.shift();
+            return coeffs;
+        }
+
+        function rootsToPZList(roots, type, existingList = []) {
+            const used = new Set();
+            const result = [];
+            const tol = 1e-9;
+            for (let i = 0; i < roots.length; i++) {
+                if (used.has(i)) continue;
+                const r = roots[i];
+                if (Math.abs(r.im) < tol) {
+                    result.push({
+                        type: 'real', fn: Math.abs(r.re) / (2 * Math.PI), zeta: 1, isPole: type ===
+                            'pole', isZero: type === 'zero'
+                    });
+                    used.add(i);
+                } else {
+                    let conjugateIdx = -1;
+                    for (let j = i + 1; j < roots.length; j++) {
+                        if (Math.abs(r.re - roots[j].re) < tol && Math.abs(r.im + roots[j].im) < tol) {
+                            conjugateIdx = j;
+                            break;
+                        }
+                    }
+                    const wn = Math.sqrt(r.re * r.re + r.im * r.im);
+                    const zetaVal = -r.re / wn;
+                    const fn = wn / (2 * Math.PI);
+                    result.push({
+                        type: 'complex', fn: Math.max(0.01, fn), zeta: Math.max(0.001, Math.min(2, zetaVal)),
+                        isPole: type === 'pole', isZero: type === 'zero'
+                    });
+                    used.add(i);
+                    if (conjugateIdx >= 0) used.add(conjugateIdx);
+                }
+            }
+            return result;
+        }
+
+        // ==================== GLOBAL STATE ====================
+        const state = {
+            gain: 1,
+            ltiMode: 'continuous',
+            fs: 100,
+            poles: [],
+            zeros: [],
+            f0: 1,
+            waveShape: 'square',
+            harmonics: [],
+            numCoeffs: [1],
+            denCoeffs: [1, 2 * 0.7 * 2 * Math.PI, (2 * Math.PI) ** 2],
+        };
+
+        // Initialize default LP2
+        const wn_default = 2 * Math.PI * 2;
+        const zeta_default = 0.7;
+        state.poles = [
+            { type: 'complex', fn: 2, zeta: 0.7, isPole: true, isZero: false }
+        ];
+        state.zeros = [];
+        state.denCoeffs = [1, 2 * zeta_default * wn_default, wn_default * wn_default];
+        state.numCoeffs = [wn_default * wn_default];
+        state.gain = 1;
+        state.harmonics = generateHarmonics('square', 1, 25);
+
+        function generateHarmonics(shape, f0, maxH) {
+            const harms = [];
+            for (let k = 1; k <= maxH; k++) {
+                let amp = 0,
+                    phase = 0,
+                    enabled = false;
+                if (shape === 'square') {
+                    if (k % 2 === 1) {
+                        amp = 1 / k;
+                        phase = 0;
+                        enabled = k <= 15;
+                    }
+                } else if (shape === 'triangle') {
+                    if (k % 2 === 1) {
+                        amp = 1 / (k * k);
+                        phase = (k % 4 === 1) ? 0 : Math.PI;
+                        enabled = k <= 15;
+                    }
+                } else if (shape === 'sawtooth') {
+                    amp = 1 / k;
+                    phase = (k % 2 === 0) ? 0 : Math.PI;
+                    enabled = k <= 20;
+                } else if (shape === 'sine') {
+                    if (k === 1) {
+                        amp = 1;
+                        phase = 0;
+                        enabled = true;
+                    } else {
+                        amp = 0;
+                        phase = 0;
+                        enabled = false;
+                    }
+                }
+                harms.push({ k, freq: k * f0, amp, phase, enabled });
+            }
+            return harms;
+        }
+
+        function getActiveHarmonics() {
+            return state.harmonics.filter(h => h.enabled && h.amp > 0.0001);
+        }
+
+        function getPZRoots() {
+            const poles = [];
+            const zeros = [];
+            for (const p of state.poles) {
+                const wn = 2 * Math.PI * p.fn;
+                const zeta = p.zeta;
+                if (p.type === 'real' || zeta >= 1) {
+                    const sigma = zeta * wn;
+                    poles.push(new Complex(-sigma, 0));
+                } else {
+                    const sigma = zeta * wn;
+                    const wd = wn * Math.sqrt(1 - zeta * zeta);
+                    poles.push(new Complex(-sigma, wd));
+                    poles.push(new Complex(-sigma, -wd));
+                }
+            }
+            for (const z of state.zeros) {
+                const wn = 2 * Math.PI * z.fn;
+                const zeta = z.zeta;
+                if (z.type === 'real' || zeta >= 1) {
+                    const sigma = zeta * wn;
+                    zeros.push(new Complex(-sigma, 0));
+                } else {
+                    const sigma = zeta * wn;
+                    const wd = wn * Math.sqrt(1 - zeta * zeta);
+                    zeros.push(new Complex(-sigma, wd));
+                    zeros.push(new Complex(-sigma, -wd));
+                }
+            }
+            return { poles, zeros };
+        }
+
+        function computeFrequencyResponse(freqs) {
+            const { poles, zeros } = getPZRoots();
+            const K = state.gain;
+            const mags = [];
+            const phases = [];
+            for (const f of freqs) {
+                const omega = 2 * Math.PI * f;
+                let s;
+                if (state.ltiMode === 'continuous') {
+                    s = new Complex(0, omega);
+                } else {
+                    const Ts = 1 / state.fs;
+                    const theta = omega * Ts;
+                    const cosT = Math.cos(theta);
+                    const sinT = Math.sin(theta);
+                    const denom_z = (1 + cosT) * (1 + cosT) + sinT * sinT;
+                    const re = (2 / Ts) * (cosT * cosT + sinT * sinT - 1 + 2 * sinT * sinT) / denom_z;
+                    const im = (2 / Ts) * (2 * sinT) / denom_z;
+                    s = new Complex(re, im);
+                }
+                let num = new Complex(K, 0);
+                for (const z of zeros) num = num.mul(s.sub(z));
+                let den = new Complex(1, 0);
+                for (const p of poles) den = den.mul(s.sub(p));
+                const H = den.abs() < 1e-15 ? new Complex(0, 0) : num.div(den);
+                mags.push(H.abs());
+                phases.push(H.arg() * 180 / Math.PI);
+            }
+            return { mags, phases };
+        }
+
+        function computeTimeSignals(tPoints) {
+            const active = getActiveHarmonics();
+            const freqs = active.map(h => h.freq);
+            const { mags, phases } = computeFrequencyResponse(freqs);
+            const Hmap = {};
+            for (let i = 0; i < freqs.length; i++) {
+                Hmap[freqs[i]] = { mag: mags[i], phase: phases[i] * Math.PI / 180 };
+            }
+            const input = new Array(tPoints.length).fill(0);
+            const output = new Array(tPoints.length).fill(0);
+            for (const h of active) {
+                const H = Hmap[h.freq] || { mag: 1, phase: 0 };
+                for (let i = 0; i < tPoints.length; i++) {
+                    const t = tPoints[i];
+                    const val = h.amp * Math.sin(2 * Math.PI * h.freq * t + h.phase);
+                    input[i] += val;
+                    output[i] += h.amp * H.mag * Math.sin(2 * Math.PI * h.freq * t + h.phase + H.phase);
+                }
+            }
+            return { input, output };
+        }
+
+        // ==================== THREE.JS SCENE ====================
+        const container3D = document.getElementById('container3D');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#1a1a2e');
+        scene.fog = new THREE.Fog('#1a1a2e', 8, 30);
+
+        const camera = new THREE.PerspectiveCamera(50, container3D.clientWidth / container3D.clientHeight, 0.5, 50);
+        camera.position.set(8, 5.5, 9);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container3D.clientWidth, container3D.clientHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        container3D.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.08;
+        controls.minDistance = 3;
+        controls.maxDistance = 20;
+        controls.maxPolarAngle = Math.PI * 0.75;
+        controls.update();
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight('#bcd4ff', 1.8);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight('#ffffff', 2.5);
+        dirLight.position.set(8, 12, 6);
+        scene.add(dirLight);
+        const dirLight2 = new THREE.DirectionalLight('#aaccff', 1.2);
+        dirLight2.position.set(-4, 2, -3);
+        scene.add(dirLight2);
+
+        // Grid floor
+        const gridHelper = new THREE.GridHelper(20, 20, '#334466', '#1a2a3a');
+        gridHelper.position.y = -3.5;
+        scene.add(gridHelper);
+
+        // Groups for cubes
+        const cubeGroupLeft = new THREE.Group();
+        const cubeGroupRight = new THREE.Group();
+        scene.add(cubeGroupLeft);
+        scene.add(cubeGroupRight);
+        cubeGroupLeft.position.set(-4.5, 0, 0);
+        cubeGroupRight.position.set(4.5, 0, 0);
+
+        const cubeSize = { w: 3.5, h: 2.8, d: 3.2 };
+
+        function createCubeGroup(color) {
+            const group = new THREE.Group();
+            const geo = new THREE.BoxGeometry(cubeSize.w, cubeSize.h, cubeSize.d);
+            const mat = new THREE.MeshPhysicalMaterial({
+                color,
+                metalness: 0.05,
+                roughness: 0.2,
+                transparent: true,
+                opacity: 0.35,
+                envMapIntensity: 0.4,
+                clearcoat: 0.1,
+            });
+            const box = new THREE.Mesh(geo, mat);
+            group.add(box);
+            const edgesGeo = new THREE.EdgesGeometry(geo);
+            const edgesMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 });
+            const edges = new THREE.LineSegments(edgesGeo, edgesMat);
+            group.add(edges);
+            return group;
+        }
+
+        const leftCube = createCubeGroup('#5b9eff');
+        const rightCube = createCubeGroup('#ff7b5b');
+        cubeGroupLeft.add(leftCube);
+        cubeGroupRight.add(rightCube);
+
+        // Dynamic elements containers
+        const leftWavesGroup = new THREE.Group();
+        const rightWavesGroup = new THREE.Group();
+        cubeGroupLeft.add(leftWavesGroup);
+        cubeGroupRight.add(rightWavesGroup);
+
+        const leftSpectrumGroup = new THREE.Group();
+        const rightSpectrumGroup = new THREE.Group();
+        cubeGroupLeft.add(leftSpectrumGroup);
+        cubeGroupRight.add(rightSpectrumGroup);
+
+        const leftCompositeGroup = new THREE.Group();
+        const rightCompositeGroup = new THREE.Group();
+        cubeGroupLeft.add(leftCompositeGroup);
+        cubeGroupRight.add(rightCompositeGroup);
+
+        // Labels
+        function createLabel(text, position, parent) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Segoe UI, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(text, 128, 40);
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.minFilter = THREE.LinearFilter;
+            const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.position.copy(position);
+            sprite.scale.set(2.5, 0.625, 1);
+            parent.add(sprite);
+        }
+        createLabel('ENTRADA', new THREE.Vector3(0, cubeSize.h / 2 + 0.7, 0), cubeGroupLeft);
+        createLabel('SALIDA', new THREE.Vector3(0, cubeSize.h / 2 + 0.7, 0), cubeGroupRight);
+
+        function clearGroup(group) {
+            while (group.children.length > 0) {
+                const child = group.children[0];
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+                    else child.material.dispose();
+                }
+                group.remove(child);
+            }
+        }
+
+        function createWaveLine(points, color, lineWidth = 1) {
+            const geo = new THREE.BufferGeometry().setFromPoints(points);
+            const mat = new THREE.LineBasicMaterial({ color, linewidth: lineWidth, transparent: true, opacity: 0.9 });
+            return new THREE.Line(geo, mat);
+        }
+
+        function createBar(x, y, z, w, h, d, color) {
+            const geo = new THREE.BoxGeometry(w, h, d);
+            const mat = new THREE.MeshStandardMaterial({
+                color, roughness: 0.3, metalness: 0.2, emissive: color,
+                emissiveIntensity: 0.4
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.set(x, y, z);
+            return mesh;
+        }
+
+        function createTubeFromPoints(points, color, radius = 0.06) {
+            if (points.length < 2) return new THREE.Group();
+            const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
+            const geo = new THREE.TubeGeometry(curve, Math.min(120, points.length * 2), radius, 8, false);
+            const mat = new THREE.MeshStandardMaterial({
+                color, roughness: 0.2, metalness: 0.3, emissive: color,
+                emissiveIntensity: 0.5
+            });
+            const mesh = new THREE.Mesh(geo, mat);
+            return mesh;
+        }
+
+        function update3DScene() {
+            const active = getActiveHarmonics();
+            const { mags, phases } = computeFrequencyResponse(active.map(h => h.freq));
+            const Hmap = {};
+            for (let i = 0; i < active.length; i++) {
+                Hmap[active[i].freq] = { mag: mags[i], phase: phases[i] * Math.PI / 180 };
+            }
+            const maxAmp = Math.max(0.01, ...active.map(h => h.amp), 0.5);
+            const halfW = cubeSize.w / 2;
+            const halfH = cubeSize.h / 2;
+            const halfD = cubeSize.d / 2;
+            const numWaves = active.length;
+            const zSpan = cubeSize.d * 0.8;
+            const zStart = -zSpan / 2;
+
+            function updateCubeWaves(wavesGroup, spectrumGroup, compositeGroup, isOutput) {
+                clearGroup(wavesGroup);
+                clearGroup(spectrumGroup);
+                clearGroup(compositeGroup);
+                const nPoints = 150;
+                const xVals = [];
+                for (let i = 0; i < nPoints; i++) {
+                    xVals.push(-halfW + (cubeSize.w * i) / (nPoints - 1));
+                }
+                const time = performance.now() * 0.001;
+                for (let idx = 0; idx < active.length; idx++) {
+                    const h = active[idx];
+                    const zPos = zStart + (idx / Math.max(1, numWaves - 1)) * zSpan;
+                    const ampNorm = h.amp / maxAmp;
+                    const waveAmp = ampNorm * halfH * 0.75;
+                    const H = isOutput ? (Hmap[h.freq] || { mag: 1, phase: 0 }) : { mag: 1, phase: 0 };
+                    const points = [];
+                    for (const x of xVals) {
+                        const phaseArg = (2 * Math.PI * h.freq * (x / cubeSize.w) * 2) + time * h.freq * 2 + h.phase + (isOutput ?
+                            H.phase : 0);
+                        const y = waveAmp * H.mag * Math.sin(phaseArg);
+                        points.push(new THREE.Vector3(x, y, zPos));
+                    }
+                    const line = createWaveLine(points, isOutput ? '#ffcc80' : '#aad4ff');
+                    wavesGroup.add(line);
+                    const barHeight = ampNorm * H.mag * halfH * 1.4;
+                    if (barHeight > 0.005) {
+                        const bar = createBar(halfW + 0.1, barHeight / 2 - halfH * 0.1, zPos, 0.15, Math.max(0.01,
+                            barHeight), 0.15, isOutput ? '#ff9966' : '#6699ff');
+                        spectrumGroup.add(bar);
+                    }
+                }
+                // Composite signal
+                const compositePoints = [];
+                const nComp = 200;
+                for (let i = 0; i < nComp; i++) {
+                    const x = -halfW + (cubeSize.w * i) / (nComp - 1);
+                    const t = x / cubeSize.w * 2;
+                    let y = 0;
+                    for (const h of active) {
+                        const H = isOutput ? (Hmap[h.freq] || { mag: 1, phase: 0 }) : { mag: 1, phase: 0 };
+                        const ampNorm = h.amp / maxAmp;
+                        const waveAmp = ampNorm * halfH * 0.75;
+                        y += waveAmp * H.mag * Math.sin(2 * Math.PI * h.freq * t + time * h.freq * 2 + h.phase + (isOutput ? H
+                            .phase : 0));
+                    }
+                    y = Math.max(-halfH * 0.9, Math.min(halfH * 0.9, y));
+                    compositePoints.push(new THREE.Vector3(x, y, halfD + 0.05));
+                }
+                const tube = createTubeFromPoints(compositePoints, isOutput ? '#ff6633' : '#3388ff', 0.07);
+                compositeGroup.add(tube);
+            }
+            updateCubeWaves(leftWavesGroup, leftSpectrumGroup, leftCompositeGroup, false);
+            updateCubeWaves(rightWavesGroup, rightSpectrumGroup, rightCompositeGroup, true);
+        }
+
+        function animate3D() {
+            requestAnimationFrame(animate3D);
+            controls.update();
+            const time = performance.now() * 0.001;
+            // Update wave animations continuously
+            const active = getActiveHarmonics();
+            const { mags, phases } = computeFrequencyResponse(active.map(h => h.freq));
+            const Hmap = {};
+            for (let i = 0; i < active.length; i++) {
+                Hmap[active[i].freq] = { mag: mags[i], phase: phases[i] * Math.PI / 180 };
+            }
+            const maxAmp = Math.max(0.01, ...active.map(h => h.amp), 0.5);
+            const halfW = cubeSize.w / 2;
+            const halfH = cubeSize.h / 2;
+            const zSpan = cubeSize.d * 0.8;
+            const zStart = -zSpan / 2;
+            const numWaves = active.length;
+
+            function animateWaves(wavesGroup, isOutput) {
+                for (let idx = 0; idx < wavesGroup.children.length; idx++) {
+                    const line = wavesGroup.children[idx];
+                    if (!line || !line.geometry) continue;
+                    const h = active[idx];
+                    if (!h) continue;
+                    const H = isOutput ? (Hmap[h.freq] || { mag: 1, phase: 0 }) : { mag: 1, phase: 0 };
+                    const ampNorm = h.amp / maxAmp;
+                    const waveAmp = ampNorm * halfH * 0.75;
+                    const positions = line.geometry.attributes.position;
+                    const nPoints = positions.count;
+                    for (let i = 0; i < nPoints; i++) {
+                        const x = positions.getX(i);
+                        const phaseArg = (2 * Math.PI * h.freq * (x / cubeSize.w) * 2) + time * h.freq * 2 + h.phase + (isOutput ?
+                            H.phase : 0);
+                        const y = waveAmp * H.mag * Math.sin(phaseArg);
+                        positions.setY(i, y);
+                    }
+                    positions.needsUpdate = true;
+                }
+            }
+            animateWaves(leftWavesGroup, false);
+            animateWaves(rightWavesGroup, true);
+            renderer.render(scene, camera);
+        }
+
+        // ==================== CHARTS ====================
+        let chartTime, chartBode, chartPZ;
+
+        function initCharts() {
+            const ctxTime = document.getElementById('chartTime').getContext('2d');
+            chartTime = new Chart(ctxTime, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'Entrada', data: [], borderColor: '#22c55e', borderWidth: 2, pointRadius: 0,
+                            tension: 0.3, fill: false
+                        },
+                        {
+                            label: 'Salida', data: [], borderColor: '#f97316', borderWidth: 2, pointRadius: 0,
+                            tension: 0.3, fill: false
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 150 },
+                    scales: { x: { display: false }, y: { ticks: { font: { size: 9 } } } },
+                    plugins: { legend: { labels: { boxWidth: 12, font: { size: 9 } } } },
+                },
+            });
+
+            const ctxBode = document.getElementById('chartBode').getContext('2d');
+            chartBode = new Chart(ctxBode, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Magnitud (dB)', data: [], borderColor: '#3b6df0', backgroundColor: '#3b6df0',
+                            pointRadius: 1, showLine: true, borderWidth: 2, yAxisID: 'yMag', fill: false
+                        },
+                        {
+                            label: 'Fase (°)', data: [], borderColor: '#9ca3af', backgroundColor: '#9ca3af',
+                            pointRadius: 1, showLine: true, borderWidth: 1.5, borderDash: [5, 5], yAxisID: 'yPhase',
+                            fill: false
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 150 },
+                    scales: {
+                        x: {
+                            type: 'logarithmic', min: 0.05, max: 200, title: { display: false },
+                            ticks: { font: { size: 8 } }
+                        },
+                        yMag: {
+                            type: 'linear', position: 'left', title: { display: false },
+                            ticks: { font: { size: 8 } }
+                        },
+                        yPhase: {
+                            type: 'linear', position: 'right', min: -270, max: 270, title: { display: false },
+                            grid: { drawOnChartArea: false }, ticks: { font: { size: 8 } }
+                        },
+                    },
+                    plugins: { legend: { labels: { boxWidth: 12, font: { size: 8 } } } },
+                },
+            });
+
+            const ctxPZ = document.getElementById('chartPZ').getContext('2d');
+            chartPZ = new Chart(ctxPZ, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        {
+                            label: 'Polos', data: [], backgroundColor: '#ef4444', pointStyle: 'crossRot',
+                            pointRadius: 8, borderColor: '#ef4444', borderWidth: 2
+                        },
+                        {
+                            label: 'Ceros', data: [], backgroundColor: '#3b82f6', pointStyle: 'circle',
+                            pointRadius: 7, borderColor: '#3b82f6', borderWidth: 2
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 150 },
+                    scales: {
+                        x: {
+                            suggestedMin: -10, suggestedMax: 10, title: { display: true, text: 'Re', font: { size: 9 } },
+                            grid: { color: '#e5e7eb' }, ticks: { font: { size: 8 } }
+                        },
+                        y: {
+                            suggestedMin: -10, suggestedMax: 10, title: { display: true, text: 'Im', font: { size: 9 } },
+                            grid: { color: '#e5e7eb' }, ticks: { font: { size: 8 } }
+                        },
+                    },
+                    plugins: {
+                        legend: { labels: { boxWidth: 12, font: { size: 9 }, usePointStyle: true } },
+                    },
+                },
+            });
+            console.log('Chart.js inicializado');
+        }
+
+        function updateAllCharts() {
+            const tPoints = [];
+            const nTime = 400;
+            const period = 1 / state.f0;
+            const tMax = period * 2;
+            for (let i = 0; i < nTime; i++) {
+                tPoints.push((i / (nTime - 1)) * tMax);
+            }
+            const { input, output } = computeTimeSignals(tPoints);
+            chartTime.data.labels = tPoints;
+            chartTime.data.datasets[0].data = input;
+            chartTime.data.datasets[1].data = output;
+            chartTime.update();
+
+            const freqs = [];
+            const nFreq = 300;
+            for (let i = 0; i < nFreq; i++) {
+                freqs.push(Math.pow(10, Math.log10(0.05) + (Math.log10(200) - Math.log10(0.05)) * i / (nFreq - 1)));
+            }
+            const { mags, phases } = computeFrequencyResponse(freqs);
+            const magDB = mags.map(m => 20 * Math.log10(Math.max(m, 1e-15)));
+            chartBode.data.datasets[0].data = freqs.map((f, i) => ({ x: f, y: magDB[i] }));
+            chartBode.data.datasets[1].data = freqs.map((f, i) => ({ x: f, y: phases[i] }));
+            chartBode.update();
+
+            const { poles, zeros } = getPZRoots();
+            chartPZ.data.datasets[0].data = poles.map(p => ({ x: p.re, y: p.im }));
+            chartPZ.data.datasets[1].data = zeros.map(z => ({ x: z.re, y: z.im }));
+            chartPZ.update();
+            console.log(`Gráficos actualizados - PZ: ${poles.length} polos, ${zeros.length} ceros`);
+        }
+
+        // ==================== UI UPDATE ====================
+        function updatePZUI() {
+            const container = document.getElementById('pzContainer');
+            container.innerHTML = '';
+            const allItems = [
+                ...state.poles.map((p, i) => ({ ...p, idx: i, kind: 'pole' })),
+                ...state.zeros.map((z, i) => ({ ...z, idx: i, kind: 'zero' })),
+            ];
+            for (const item of allItems) {
+                const div = document.createElement('div');
+                div.className = 'pz-item';
+                const kindLabel = item.kind === 'pole' ? '🔴 Polo' : '🔵 Cero';
+                const typeSelect = document.createElement('select');
+                typeSelect.innerHTML = `<option value="real" ${item.type === 'real' ? 'selected' : ''}>Real</option>
+                      <option value="complex" ${item.type === 'complex' ? 'selected' : ''}>Complejo</option>`;
+                const fnInput = document.createElement('input');
+                fnInput.type = 'number';
+                fnInput.step = '0.01';
+                fnInput.min = '0.01';
+                fnInput.value = item.fn;
+                fnInput.style.width = '50px';
+                const zetaInput = document.createElement('input');
+                zetaInput.type = 'number';
+                zetaInput.step = '0.01';
+                zetaInput.min = '0.001';
+                zetaInput.max = '3';
+                zetaInput.value = item.zeta;
+                zetaInput.style.width = '50px';
+                if (item.type === 'real') zetaInput.style.display = 'none';
+                typeSelect.addEventListener('change', () => {
+                    if (typeSelect.value === 'real') {
+                        zetaInput.style.display = 'none';
+                        zetaInput.value = 1;
+                    } else {
+                        zetaInput.style.display = 'inline-block';
+                        zetaInput.value = Math.max(0.001, parseFloat(zetaInput.value) || 0.7);
+                    }
+                    updateItemFromUI();
+                });
+                const delBtn = document.createElement('button');
+                delBtn.textContent = '✕';
+                delBtn.style.background = '#fee2e2';
+                delBtn.style.color = '#dc2626';
+                delBtn.addEventListener('click', () => {
+                    if (item.kind === 'pole') state.poles.splice(item.idx, 1);
+                    else state.zeros.splice(item.idx, 1);
+                    updatePZUI();
+                    fullUpdate();
+                });
+                div.appendChild(document.createTextNode(kindLabel));
+                div.appendChild(typeSelect);
+                div.appendChild(document.createTextNode('fn:'));
+                div.appendChild(fnInput);
+                div.appendChild(document.createTextNode('ζ:'));
+                div.appendChild(zetaInput);
+                div.appendChild(delBtn);
+                container.appendChild(div);
+                const updateItemFromUI = () => {
+                    const newType = typeSelect.value;
+                    const newFn = parseFloat(fnInput.value) || 1;
+                    const newZeta = parseFloat(zetaInput.value) || 0.7;
+                    const updated = {
+                        type: newType, fn: newFn, zeta: newZeta, isPole: item.kind === 'pole',
+                        isZero: item.kind === 'zero'
+                    };
+                    if (item.kind === 'pole') state.poles[item.idx] = updated;
+                    else state.zeros[item.idx] = updated;
+                    fullUpdate();
+                };
+                fnInput.addEventListener('change', updateItemFromUI);
+                zetaInput.addEventListener('change', updateItemFromUI);
+                typeSelect.addEventListener('change', updateItemFromUI);
+            }
+        }
+
+        function updateHarmonicsUI() {
+            const container = document.getElementById('harmonicsContainer');
+            container.innerHTML = '';
+            for (const h of state.harmonics) {
+                const div = document.createElement('div');
+                div.className = 'harmonic-row';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.checked = h.enabled;
+                cb.addEventListener('change', () => {
+                    h.enabled = cb.checked;
+                    fullUpdate();
+                });
+                const freqSpan = document.createElement('span');
+                freqSpan.textContent = `${h.freq.toFixed(1)} Hz`;
+                const ampSlider = document.createElement('input');
+                ampSlider.type = 'range';
+                ampSlider.min = '0';
+                ampSlider.max = '2';
+                ampSlider.step = '0.01';
+                ampSlider.value = h.amp;
+                ampSlider.addEventListener('input', () => {
+                    h.amp = parseFloat(ampSlider.value);
+                    fullUpdate();
+                });
+                const ampVal = document.createElement('span');
+                ampVal.textContent = h.amp.toFixed(2);
+                ampVal.style.minWidth = '28px';
+                ampSlider.addEventListener('input', () => {
+                    ampVal.textContent = parseFloat(ampSlider.value).toFixed(
+                        2);
+                });
+                const phaseSlider = document.createElement('input');
+                phaseSlider.type = 'range';
+                phaseSlider.min = '0';
+                phaseSlider.max = (2 * Math.PI).toFixed(2);
+                phaseSlider.step = '0.01';
+                phaseSlider.value = h.phase;
+                phaseSlider.addEventListener('input', () => {
+                    h.phase = parseFloat(phaseSlider.value);
+                    fullUpdate();
+                });
+                const phaseVal = document.createElement('span');
+                phaseVal.textContent = h.phase.toFixed(2);
+                phaseVal.style.minWidth = '28px';
+                phaseSlider.addEventListener('input', () => {
+                    phaseVal.textContent = parseFloat(phaseSlider.value).toFixed(
+                        2);
+                });
+                div.appendChild(cb);
+                div.appendChild(freqSpan);
+                div.appendChild(document.createTextNode('A:'));
+                div.appendChild(ampSlider);
+                div.appendChild(ampVal);
+                div.appendChild(document.createTextNode('φ:'));
+                div.appendChild(phaseSlider);
+                div.appendChild(phaseVal);
+                container.appendChild(div);
+            }
+        }
+
+        function fullUpdate() {
+            update3DScene();
+            updateAllCharts();
+            updatePZUI();
+            document.getElementById('gainVal').textContent = state.gain.toFixed(2);
+            document.getElementById('f0Val').textContent = state.f0.toFixed(2);
+            document.getElementById('fsVal').textContent = state.fs;
+            document.getElementById('numPoly').value = coeffsToPolyString(state.numCoeffs);
+            document.getElementById('denPoly').value = coeffsToPolyString(state.denCoeffs);
+        }
+
+        function coeffsToPolyString(coeffs) {
+            if (!coeffs || coeffs.length === 0) return '0';
+            const terms = [];
+            const degree = coeffs.length - 1;
+            for (let i = 0; i < coeffs.length; i++) {
+                const exp = degree - i;
+                const c = coeffs[i];
+                if (Math.abs(c) < 1e-12) continue;
+                let term = '';
+                if (i === 0) term = c >= 0 ? '' : '-';
+                else term = c >= 0 ? ' + ' : ' - ';
+                const absC = Math.abs(c);
+                if (exp === 0) term += absC.toFixed(6).replace(/\.?0+$/, '');
+                else if (exp === 1) term += (absC === 1 ? '' : absC.toFixed(6).replace(/\.?0+$/, '') + '*') + 's';
+                else term += (absC === 1 ? '' : absC.toFixed(6).replace(/\.?0+$/, '') + '*') + 's^' + exp;
+                terms.push(term);
+            }
+            return terms.join('').replace(/^\s*\+\s*/, '') || '0';
+        }
+
+        function applyPreset(preset) {
+            state.zeros = [];
+            state.poles = [];
+            const fc = 2;
+            const wc = 2 * Math.PI * fc;
+            if (preset === 'lp1') {
+                state.poles = [{ type: 'real', fn: fc, zeta: 1, isPole: true, isZero: false }];
+                state.zeros = [];
+                state.gain = wc;
+                state.numCoeffs = [wc];
+                state.denCoeffs = [1, wc];
+            } else if (preset === 'lp2') {
+                const zeta = 0.7;
+                state.poles = [{ type: 'complex', fn: fc, zeta, isPole: true, isZero: false }];
+                state.zeros = [];
+                state.gain = wc * wc;
+                state.numCoeffs = [wc * wc];
+                state.denCoeffs = [1, 2 * zeta * wc, wc * wc];
+            } else if (preset === 'hp1') {
+                state.zeros = [{ type: 'real', fn: 0.001, zeta: 1, isPole: false, isZero: true }];
+                state.poles = [{ type: 'real', fn: fc, zeta: 1, isPole: true, isZero: false }];
+                state.gain = 1;
+                state.numCoeffs = [1, 0];
+                state.denCoeffs = [1, wc];
+            } else if (preset === 'notch') {
+                const fnNotch = fc;
+                const wnN = 2 * Math.PI * fnNotch;
+                const zetaZ = 0.05;
+                const zetaP = 0.4;
+                state.zeros = [{ type: 'complex', fn: fnNotch, zeta: zetaZ, isPole: false, isZero: true }];
+                state.poles = [{ type: 'complex', fn: fnNotch, zeta: zetaP, isPole: true, isZero: false }];
+                state.gain = 1;
+                state.numCoeffs = [1, 2 * zetaZ * wnN, wnN * wnN];
+                state.denCoeffs = [1, 2 * zetaP * wnN, wnN * wnN];
+            }
+            document.getElementById('gainSlider').value = state.gain;
+            document.getElementById('gainVal').textContent = state.gain.toFixed(2);
+            updatePZUI();
+            fullUpdate();
+        }
+
+        function applyPolynomialEquation() {
+            const numStr = document.getElementById('numPoly').value.trim();
+            const denStr = document.getElementById('denPoly').value.trim();
+            if (!numStr || !denStr) { alert('Ingrese numerador y denominador'); return; }
+            const numCoeffs = parsePolynomial(numStr);
+            const denCoeffs = parsePolynomial(denStr);
+            if (numCoeffs.length === 0 || denCoeffs.length === 0) { alert('Error al parsear polinomios'); return; }
+            state.numCoeffs = numCoeffs;
+            state.denCoeffs = denCoeffs;
+            const numLeading = numCoeffs[0] || 1;
+            const denLeading = denCoeffs[0] || 1;
+            state.gain = numLeading / denLeading;
+            document.getElementById('gainSlider').value = Math.max(0.1, Math.min(5, state.gain));
+            document.getElementById('gainVal').textContent = state.gain.toFixed(2);
+            const numRoots = durandKerner(numCoeffs);
+            const denRoots = durandKerner(denCoeffs);
+            state.zeros = rootsToPZList(numRoots, 'zero');
+            state.poles = rootsToPZList(denRoots, 'pole');
+            updatePZUI();
+            fullUpdate();
+            console.log(`Ecuación aplicada: ${state.zeros.length} ceros, ${state.poles.length} polos, K=${state.gain.toFixed(3)}`);
+        }
+
+        // ==================== EVENT LISTENERS ====================
+        document.getElementById('gainSlider').addEventListener('input', function () {
+            state.gain = parseFloat(this.value);
+            document.getElementById('gainVal').textContent = state.gain.toFixed(2);
+            fullUpdate();
+        });
+        document.getElementById('ltiMode').addEventListener('change', function () {
+            state.ltiMode = this.value;
+            document.getElementById('fsLabel').style.display = state.ltiMode === 'discrete' ? 'flex' : 'none';
+            fullUpdate();
+        });
+        document.getElementById('fsSlider').addEventListener('input', function () {
+            state.fs = parseInt(this.value);
+            document.getElementById('fsVal').textContent = state.fs;
+            fullUpdate();
+        });
+        document.getElementById('f0Slider').addEventListener('input', function () {
+            state.f0 = parseFloat(this.value);
+            document.getElementById('f0Val').textContent = state.f0.toFixed(2);
+            state.harmonics = generateHarmonics(state.waveShape, state.f0, 25);
+            updateHarmonicsUI();
+            fullUpdate();
+        });
+        document.getElementById('waveShape').addEventListener('change', function () {
+            state.waveShape = this.value;
+            state.harmonics = generateHarmonics(state.waveShape, state.f0, 25);
+            updateHarmonicsUI();
+            fullUpdate();
+        });
+        document.getElementById('applyPolyBtn').addEventListener('click', applyPolynomialEquation);
+        document.getElementById('addPoleBtn').addEventListener('click', () => {
+            state.poles.push({ type: 'real', fn: 3, zeta: 1, isPole: true, isZero: false });
+            updatePZUI();
+            fullUpdate();
+        });
+        document.getElementById('addZeroBtn').addEventListener('click', () => {
+            state.zeros.push({ type: 'real', fn: 3, zeta: 1, isPole: false, isZero: true });
+            updatePZUI();
+            fullUpdate();
+        });
+        document.querySelectorAll('[data-preset]').forEach(btn => {
+            btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+        });
+        document.querySelectorAll('#viewBtns button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const view = btn.dataset.view;
+                const target = new THREE.Vector3(0, 0, 0);
+                let pos;
+                switch (view) {
+                    case 'iso':
+                        pos = new THREE.Vector3(8, 5.5, 9);
+                        break;
+                    case 'front':
+                        pos = new THREE.Vector3(0, 0, 13);
+                        break;
+                    case 'side':
+                        pos = new THREE.Vector3(13, 0, 0);
+                        break;
+                    case 'top':
+                        pos = new THREE.Vector3(0, 12, 0.1);
+                        break;
+                    default:
+                        pos = new THREE.Vector3(8, 5.5, 9);
+                }
+                camera.position.copy(pos);
+                controls.target.copy(target);
+                controls.update();
+            });
+        });
+
+        // Resize handling
+        function resize3D() {
+            const w = container3D.clientWidth;
+            const h = container3D.clientHeight;
+            if (w <= 0 || h <= 0) return;
+            renderer.setSize(w, h);
+            camera.aspect = w / Math.max(h, 1);
+            camera.updateProjectionMatrix();
+        }
+
+        function resizeCharts() {
+            [chartTime, chartBode, chartPZ].forEach(ch => {
+                if (ch && ch.resize) ch.resize();
+                if (ch && ch.update) ch.update();
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            resize3D();
+            resizeCharts();
+            console.log('Redimensionamiento detectado');
+        });
+
+        if (window.ResizeObserver) {
+            const ro = new ResizeObserver(() => {
+                resize3D();
+                resizeCharts();
+            });
+            ro.observe(container3D);
+            ro.observe(document.getElementById('panelBottom'));
+            console.log('ResizeObserver activado');
+        }
+
+        // ==================== INITIALIZATION ====================
+        function init() {
+            initCharts();
+            updatePZUI();
+            updateHarmonicsUI();
+            document.getElementById('gainSlider').value = state.gain;
+            document.getElementById('gainVal').textContent = state.gain.toFixed(2);
+            document.getElementById('f0Slider').value = state.f0;
+            document.getElementById('f0Val').textContent = state.f0.toFixed(2);
+            document.getElementById('fsSlider').value = state.fs;
+            document.getElementById('fsVal').textContent = state.fs;
+            document.getElementById('fsLabel').style.display = state.ltiMode === 'discrete' ? 'flex' : 'none';
+            document.getElementById('numPoly').value = coeffsToPolyString(state.numCoeffs);
+            document.getElementById('denPoly').value = coeffsToPolyString(state.denCoeffs);
+            fullUpdate();
+            resize3D();
+            console.log('Simulador 3D SISO inicializado correctamente');
+            console.log(
+                `Estado inicial: ${state.poles.length} polos, ${state.zeros.length} ceros, K=${state.gain}, f₀=${state.f0} Hz, forma=${state.waveShape}`
+            );
+        }
+
+        init();
+        animate3D();
+
+        // Force initial resize after fonts load
+        setTimeout(() => {
+            resize3D();
+            resizeCharts();
+        }, 300);
+        setTimeout(() => {
+            resize3D();
+            resizeCharts();
+        }, 800);
+
+        console.log('✅ Simulador 3D SISO listo para usar');
+    </script>
+</body>
+
+</html>
